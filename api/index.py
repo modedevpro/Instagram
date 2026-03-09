@@ -2,6 +2,7 @@ from flask import Flask, request, Response
 import instaloader
 import contextlib
 import json
+import time
 
 app = Flask(__name__)
 
@@ -29,14 +30,24 @@ def download():
 
         L = instaloader.Instaloader()
 
+        # تسجيل الدخول
+        with contextlib.redirect_stdout(None), contextlib.redirect_stderr(None):
+            L.login("modesadelsa", "123###***qweQWE")
+
         # ---------------- POST / REEL ----------------
         if url and ("/reel/" in url or "/p/" in url):
 
             url = url.split("?")[0]
             shortcode = url.split("/")[-2]
 
-            with contextlib.redirect_stdout(None), contextlib.redirect_stderr(None):
-                post = instaloader.Post.from_shortcode(L.context, shortcode)
+            # retry لتجنب rate limit
+            for i in range(3):
+                try:
+                    with contextlib.redirect_stdout(None), contextlib.redirect_stderr(None):
+                        post = instaloader.Post.from_shortcode(L.context, shortcode)
+                    break
+                except:
+                    time.sleep(3)
 
             data["type"] = "post"
             data["shortcode"] = shortcode
@@ -93,6 +104,7 @@ def download():
             media = []
 
             for story in L.get_stories(userids=[profile.userid]):
+
                 for item in story.get_items():
 
                     if item.is_video:
@@ -123,6 +135,7 @@ def download():
             media = []
 
             for story in L.get_stories(userids=[profile.userid]):
+
                 for item in story.get_items():
 
                     if item.is_video:
