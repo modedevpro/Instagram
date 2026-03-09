@@ -1,15 +1,21 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, Response
 import instaloader
 import contextlib
+import json
 
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return {
+    data = {
         "status": "running",
-        "usage": "/download?url=INSTAGRAM_URL"
+        "usage": [
+            "/download?url=INSTAGRAM_URL",
+            "/download?user=USERNAME"
+        ]
     }
+    return Response(json.dumps(data, ensure_ascii=False), mimetype="application/json")
+
 
 @app.route("/download")
 def download():
@@ -17,18 +23,16 @@ def download():
     data = {}
 
     try:
+
         url = request.args.get("url")
-
-        if not url:
-            return jsonify({"error": "ضع رابط انستقرام"}), 400
-
-        url = url.split("?")[0]
+        username_param = request.args.get("user")
 
         L = instaloader.Instaloader()
 
-        # ---------------- POSTS / REELS ----------------
-        if "/reel/" in url or "/p/" in url:
+        # ---------------- POST / REEL ----------------
+        if url and ("/reel/" in url or "/p/" in url):
 
+            url = url.split("?")[0]
             shortcode = url.split("/")[-2]
 
             with contextlib.redirect_stdout(None), contextlib.redirect_stderr(None):
@@ -76,22 +80,19 @@ def download():
 
             data["media"] = media
 
-        # ---------------- STORIES ----------------
-        elif "/stories/" in url:
 
+        # ---------------- STORY FROM LINK ----------------
+        elif url and "/stories/" in url:
+
+            url = url.split("?")[0]
             username = url.split("/stories/")[1].split("/")[0]
 
             with contextlib.redirect_stdout(None), contextlib.redirect_stderr(None):
                 profile = instaloader.Profile.from_username(L.context, username)
 
-            data["type"] = "story"
-            data["username"] = username
-            data["owner_id"] = profile.userid
-
             media = []
 
             for story in L.get_stories(userids=[profile.userid]):
-
                 for item in story.get_items():
 
                     if item.is_video:
@@ -105,19 +106,52 @@ def download():
                             "url": item.url
                         })
 
-                    break
-                break
-
+            data["type"] = "story"
+            data["username"] = username
+            data["owner_id"] = profile.userid
             data["media"] = media
 
+
+        # ---------------- STORY FROM USERNAME ----------------
+        elif username_param:
+
+            username = username_param
+
+            with contextlib.redirect_stdout(None), contextlib.redirect_stderr(None):
+                profile = instaloader.Profile.from_username(L.context, username)
+
+            media = []
+
+            for story in L.get_stories(userids=[profile.userid]):
+                for item in story.get_items():
+
+                    if item.is_video:
+                        media.append({
+                            "type": "video",
+                            "url": item.video_url
+                        })
+                    else:
+                        media.append({
+                            "type": "image",
+                            "url": item.url
+                        })
+
+            data["type"] = "story"
+            data["username"] = username
+            data["owner_id"] = profile.userid
+            data["media"] = media
+
+
         else:
-            data["error"] = "الرابط غير مدعوم"
+            data["error"] = "الرابط أو اسم المستخدم غير مدعوم"
 
     except Exception as e:
         data["error"] = str(e)
 
-    return jsonify(data)
+    return Response(
+        json.dumps(data, ensure_ascii=False),
+        mimetype="application/json"
+    )
 
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+app = app
